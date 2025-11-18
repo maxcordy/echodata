@@ -1,9 +1,5 @@
 # app.py
 
-from typing import Any
-
-from matplotlib.artist import get
-
 import gradio as gr
 
 import models.tabfms  # import all models
@@ -60,11 +56,6 @@ def build_interface() -> gr.Blocks:
         data_train = gr.State(None)
         data_test = gr.State(None)
 
-        # Select model
-        # first_model_name: str = (
-        #     "TabPFN" if "TabPFN" in MODEL_REGISTRY else next(iter(MODEL_REGISTRY))
-        # )
-
         # All possible tasks
         all_possible_tasks: list[str] = list(
             {
@@ -78,32 +69,6 @@ def build_interface() -> gr.Blocks:
             if "classification" in all_possible_tasks
             else all_possible_tasks[0]
         )
-
-        # Show possible models
-        # possible_models = [
-        #     model_name
-        #     for model_name, model_cls in MODEL_REGISTRY.items()
-        #     if chosen_task in model_cls.model_possible_tasks
-        # ]
-
-        # with gr.Row():
-        #     model_name = gr.Dropdown(
-        #         label="Select a model",
-        #         choices=list[str](MODEL_REGISTRY.keys()),
-        #         value=first_model_name,
-        #         interactive=True,
-        #     )
-
-        #     model_task = gr.Dropdown(
-        #         label="Select a model type",
-        #         choices=MODEL_REGISTRY[first_model_name].model_possible_tasks,
-        #         value=MODEL_REGISTRY[first_model_name].model_possible_tasks[0],
-        #         interactive=True,
-        #     )
-
-        # model_name.change(
-        #     fn=update_tasks_based_on_model, inputs=model_name, outputs=model_task
-        # )
 
         # CSV upload
         with gr.Row():
@@ -133,12 +98,6 @@ def build_interface() -> gr.Blocks:
                         value=False,
                         label="Add Header Row for Training Data",
                     )
-                    # info_box_train = gr.Textbox(
-                    #     label="Training Data Information",
-                    #     lines=5,
-                    #     max_lines=20,
-                    #     interactive=False,
-                    # )
                 with gr.Column():
                     add_test_header = gr.Checkbox(
                         value=False,
@@ -148,12 +107,6 @@ def build_interface() -> gr.Blocks:
                         value=False,
                         label="Ignore Target Column",
                     )
-                    # info_box_test = gr.Textbox(
-                    #     label="Testing Data Information",
-                    #     lines=5,
-                    #     max_lines=20,
-                    #     interactive=False,
-                    # )
 
         # CSV preview
         with gr.Row():
@@ -195,10 +148,6 @@ def build_interface() -> gr.Blocks:
             fn=infer_train_columns, inputs=data_train, outputs=train_target
         )
         data_test.change(fn=infer_test_columns, inputs=data_test, outputs=test_target)
-
-        # Populate info on df change
-        # data_train.change(fn=analyze_df, inputs=data_train, outputs=info_box_train)
-        # data_test.change(fn=analyze_df, inputs=data_test, outputs=info_box_test)
 
         # Populate preview on df change
         data_train.change(fn=preview_data, inputs=data_train, outputs=train_preview)
