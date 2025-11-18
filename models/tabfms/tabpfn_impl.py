@@ -1,23 +1,27 @@
 import pandas as pd
-from tabicl import TabICLClassifier
+from tabpfn import TabPFNClassifier, TabPFNRegressor
 from typing import Any, override
 from models.model_base import BaseModel
 from models.model_registry import register_model
 
 
 @register_model
-class TabICLImpl(BaseModel):
-    """Minimal implementation for TabICL."""
+class TabPFNImpl(BaseModel):
+    """Minimal implementation for TabPFN."""
 
-    model_name: str = "TabICL"
+    model_name: str = "TabPFN"
     model_possible_tasks: list[str] = [
         "classification",
+        "regression",
     ]
 
     @override
     def __init__(self, model_task: str, **kwargs: Any) -> None:
         super().__init__(model_task, **kwargs)
-        self._model = TabICLClassifier()
+        if self.model_task == "classification":
+            self._model = TabPFNClassifier()
+        elif self.model_task == "regression":
+            self._model = TabPFNRegressor()
 
     @override
     def _fit_impl(self, X: pd.DataFrame, y: pd.DataFrame) -> None:

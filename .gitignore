@@ -5,6 +5,14 @@ build/
 dist/
 wheels/
 *.egg-info
+.DS_Store
 
 # Virtual environments
 .venv
+
+pyrightconfig.json
+
+# Models
+.tabstar_checkpoint
+TabPFNModels
+AutogluonModels
