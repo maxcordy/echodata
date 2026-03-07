@@ -13,9 +13,9 @@ for model_name, model_cls in MODEL_REGISTRY.items():
         models_simple[model_name] = model_cls
 
 # Create some dummy data for testing
-X_dummy = pd.DataFrame({"f1": [0.1, 0.2, 0.3, 0.4], "f2": [1.0, 0.9, 0.8, 0.7]})
-y_class = pd.DataFrame([0, 1, 0, 1])  # Binary classification
-y_reg = pd.DataFrame([10.0, 20.0, 15.0, 25.0])  # Regression targets
+X_dummy = pd.DataFrame({"f1": np.random.rand(50), "f2": np.random.rand(50)})
+y_class = pd.DataFrame(np.random.randint(0, 2, 50))  # Binary classification
+y_reg = pd.DataFrame(np.random.rand(50))  # Regression targets
 
 
 @pytest.mark.parametrize("model_name, model_cls", MODEL_REGISTRY.items())
