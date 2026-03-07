@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from tabstar.tabstar_model import TabSTARClassifier, TabSTARRegressor
 from typing import Any, override
@@ -34,7 +35,7 @@ class TabSTARRegImpl(BaseModel):
             self._lbl2idx = {lbl: i for i, lbl in enumerate(classes)}
             self._idx2lbl = {i: lbl for lbl, i in self._lbl2idx.items()}
             y: pd.DataFrame = y.replace(self._lbl2idx).astype("int64")
-        self._model.fit(X, pd.Series(y))
+        self._model.fit(X, pd.Series(np.asarray(y).ravel()))
 
     @override
     def _predict_impl(self, X: pd.DataFrame) -> pd.DataFrame:
