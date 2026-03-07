@@ -56,13 +56,22 @@ def evaluation_scores(
 
 
 def load_and_validate(
-    train_df: pd.DataFrame,
-    test_df: pd.DataFrame,
-    train_target_col: str,
-    test_target_col: str,
+    train_df: pd.DataFrame | None,
+    test_df: pd.DataFrame | None,
+    train_target_col: str | None,
+    test_target_col: str | None,
     target_empty: bool,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame | None]:
     """Load and validate dataframes."""
+    if train_df is None:
+        raise gr.Error("Please upload a training CSV.")
+    if test_df is None:
+        raise gr.Error("Please upload a test CSV.")
+    if train_df.empty:
+        raise gr.Error("Training CSV is empty.")
+    if test_df.empty:
+        raise gr.Error("Test CSV is empty.")
+
     # Check targets are valid
     if train_target_col not in train_df.columns:
         raise gr.Error("Please select a valid training target column.")
@@ -121,10 +130,10 @@ def train_and_predict(
 def run_training_and_predict(
     model_name: str,
     model_task: str,
-    train_df: pd.DataFrame,
-    test_df: pd.DataFrame,
-    train_target_col: str,
-    test_target_col: str,
+    train_df: pd.DataFrame | None,
+    test_df: pd.DataFrame | None,
+    train_target_col: str | None,
+    test_target_col: str | None,
     target_empty: bool,
 ) -> tuple[pd.DataFrame, str, str, pd.DataFrame]:
     """Run model predictions and generate output csv."""
@@ -180,13 +189,16 @@ def run_training_and_predict(
 def run_leaderboard(
     model_names: list[str],
     model_task: str,
-    train_df: pd.DataFrame,
-    test_df: pd.DataFrame,
-    train_target_col: str,
-    test_target_col: str,
+    train_df: pd.DataFrame | None,
+    test_df: pd.DataFrame | None,
+    train_target_col: str | None,
+    test_target_col: str | None,
     target_empty: bool,
 ) -> pd.DataFrame:
     """Run models and compare results."""
+    if not model_names:
+        raise gr.Error("Please select at least one model for leaderboard.")
+
     # Load and validate data
     X_train, y_train, X_test, y_test = load_and_validate(
         train_df, test_df, train_target_col, test_target_col, target_empty
