@@ -1,6 +1,5 @@
-def main():
-    print("Hello from echodata!")
 
+from ui.simpleGradio import run_ui
 
 if __name__ == "__main__":
-    main()
+    run_ui()

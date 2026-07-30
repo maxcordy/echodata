@@ -1,106 +1,246 @@
 # app.py
-import os
-import tempfile
-import numpy as np
-import pandas as pd
+
 import gradio as gr
 
-from models.tabfms.tabicl_impl import TabICLImpl
+import models.tabfms  # import all models
+from models.model_base import BaseModel
+from models.model_registry import MODEL_REGISTRY
+
+from util.data_handling import (
+    read_csv_to_df,
+    preview_data,
+    infer_train_columns,
+    infer_test_columns,
+    analyze_df,
+)
+from util.trainer import run_training_and_predict, run_leaderboard
 
 
-def read_csv_to_df(file_obj) -> pd.DataFrame:
-    if file_obj is None:
-        raise gr.Error("Please upload the CSV.")
-    # gradio gives a tempfile-like object with .name
-    return pd.read_csv(file_obj.name)
+def get_tasks_based_on_model(model_name: str) -> list[str]:
+    """Get possible tasks based on model."""
+    model_cls: type[BaseModel] = MODEL_REGISTRY[model_name]
+    return model_cls.model_possible_tasks
 
 
-def infer_columns(file):
-    df = read_csv_to_df(file)
-    cols = list(map(str, df.columns))
-    default = cols[-1] if cols else None
-    return gr.update(choices=cols, value=default)
+def update_tasks_based_on_model(model_name: str):
+    """Update possible tasks based on model."""
+    possible_tasks: list[str] = get_tasks_based_on_model(model_name)
+    return gr.update(choices=possible_tasks, value=possible_tasks[0])
 
 
-def run_training_and_predict(train_file, test_file, train_target_col, test_target_col):
-    # Load CSVs
-    train_df = read_csv_to_df(train_file)
-    test_df = read_csv_to_df(test_file)
+def get_models_based_on_task(selected_task: str) -> list[str]:
+    """Get possible models based on task."""
+    possible_models: list[str] = []
+    for model_name, model_cls in MODEL_REGISTRY.items():
+        if selected_task in model_cls.model_possible_tasks:
+            possible_models.append(model_name)
+    return possible_models
 
-    # Train target (default to last col)
-    if train_target_col is None or train_target_col not in train_df.columns:
-        train_target_col = train_df.columns[-1]
 
-    # Split into numpy
-    y_train = train_df[train_target_col].to_numpy()
-    X_train = train_df.drop(columns=[train_target_col]).to_numpy()
-    X_test = test_df.drop(columns=[test_target_col]).to_numpy() if (test_target_col and test_target_col in test_df.columns) else test_df.to_numpy()
-
-    # Fit + predict
-    model = TabICLImpl().fit(X_train, y_train)
-    preds = model.predict(X_test)
-
-    # Accuracy (only if test has a target column)
-    accuracy = None
-    if test_target_col and test_target_col in test_df.columns:
-        y_test = test_df[test_target_col].to_numpy()
-        accuracy = float((preds == y_test).mean())
-
-    # Build outputs
-    preds_df = pd.DataFrame({"prediction": preds})
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
-    preds_df.to_csv(tmp.name, index=False)
-
-    info = (
-        f"Shapes — X_train: {X_train.shape}, y_train: {y_train.shape}, "
-        f"X_test: {X_test.shape}\nModel: {model.model_name}"
+def update_models_based_on_task(selected_task: str):
+    """Update possible models based on task."""
+    possible_models: list[str] = get_models_based_on_task(selected_task)
+    first_model_name: str = (
+        "TabPFN" if "TabPFN" in possible_models else possible_models[0]
     )
-    return (
-        train_df.head(5),
-        test_df.head(5),
-        preds_df.head(10),
-        tmp.name,
-        info,
-        "N/A" if accuracy is None else accuracy,
-    )
+    return gr.update(choices=possible_models, value=first_model_name)
 
 
-with gr.Blocks(title="TabICL — CSV Trainer/Tester") as demo:
-    gr.Markdown("## TabICL — Train on CSV, Predict on CSV")
+def build_interface() -> gr.Blocks:
+    """Build the Gradio interface."""
 
-    with gr.Row():
-        train_csv = gr.File(label="Training CSV", file_types=[".csv"])
-        test_csv = gr.File(label="Test CSV", file_types=[".csv"])
+    with gr.Blocks(title="CSV Trainer/Tester") as demo:
+        gr.Markdown("## Train on CSV, Predict on CSV")
 
-    # target selectors
-    train_target = gr.Dropdown(
-        label="Training target column (defaults to last)",
-        choices=[], value=None, interactive=True,
-    )
-    test_target = gr.Dropdown(
-        label="(Optional) Test target column for accuracy",
-        choices=[], value=None, interactive=True,
-    )
+        # Store pd.dataframe of csv data
+        data_train = gr.State(None)
+        data_test = gr.State(None)
 
-    # populate choices on upload
-    train_csv.change(infer_columns, inputs=train_csv, outputs=train_target)
-    test_csv.change(infer_columns, inputs=test_csv, outputs=test_target)
+        # All possible tasks
+        all_possible_tasks: list[str] = list(
+            {
+                task
+                for model_name, model_cls in MODEL_REGISTRY.items()
+                for task in model_cls.model_possible_tasks
+            }
+        )
+        first_task_type: str = (
+            "classification"
+            if "classification" in all_possible_tasks
+            else all_possible_tasks[0]
+        )
 
-    run_btn = gr.Button("Fit & Predict")
+        # CSV upload
+        with gr.Row():
+            train_csv = gr.File(label="Training CSV", file_types=[".csv"])
+            test_csv = gr.File(label="Test CSV", file_types=[".csv"])
 
-    with gr.Row():
-        train_preview = gr.Dataframe(label="Training CSV (head)", interactive=False)
-        test_preview = gr.Dataframe(label="Test CSV (head)", interactive=False)
-    preds_preview = gr.Dataframe(label="Predictions (first 10)", interactive=False)
-    preds_file = gr.File(label="Download predictions.csv")
-    info_box = gr.Textbox(label="Info", interactive=False)
-    accuracy_box = gr.Number(label="Accuracy (if test has target)", precision=4)
+        # CSV target selectors
+        with gr.Row():
+            train_target = gr.Dropdown(
+                label="Training target column",
+                choices=[],
+                value=None,
+                interactive=True,
+            )
+            test_target = gr.Dropdown(
+                label="Test target column",
+                choices=[],
+                value=None,
+                interactive=True,
+            )
 
-    run_btn.click(
-        fn=run_training_and_predict,
-        inputs=[train_csv, test_csv, train_target, test_target],
-        outputs=[train_preview, test_preview, preds_preview, preds_file, info_box, accuracy_box],
-    )
+        # CSV info display
+        with gr.Accordion(label="DataFrame Modifications", open=False):
+            with gr.Row():
+                with gr.Column():
+                    add_train_header = gr.Checkbox(
+                        value=False,
+                        label="Add Header Row for Training Data",
+                    )
+                with gr.Column():
+                    add_test_header = gr.Checkbox(
+                        value=False,
+                        label="Add Header Row for Testing Data",
+                    )
+                    target_empty = gr.Checkbox(
+                        value=False,
+                        label="Ignore Target Column",
+                    )
 
-if __name__ == "__main__":
+        # CSV preview
+        with gr.Row():
+            train_preview = gr.Dataframe(
+                label="Training Data Preview",
+                value=None,
+                interactive=False,
+            )
+            test_preview = gr.Dataframe(
+                label="Test Data Preview",
+                value=None,
+                interactive=False,
+            )
+
+        # Select csv data type
+        model_task = gr.Dropdown(
+            label="Select a model type",
+            choices=all_possible_tasks,
+            value=first_task_type,
+            interactive=True,
+        )
+
+        # Save CSV to state
+        train_csv.change(
+            fn=read_csv_to_df, inputs=[train_csv, add_train_header], outputs=data_train
+        )
+        test_csv.change(
+            fn=read_csv_to_df, inputs=[test_csv, add_test_header], outputs=data_test
+        )
+        add_train_header.change(
+            fn=read_csv_to_df, inputs=[train_csv, add_train_header], outputs=data_train
+        )
+        add_test_header.change(
+            fn=read_csv_to_df, inputs=[test_csv, add_test_header], outputs=data_test
+        )
+
+        # Populate choices on df change
+        data_train.change(
+            fn=infer_train_columns, inputs=data_train, outputs=train_target
+        )
+        data_test.change(fn=infer_test_columns, inputs=data_test, outputs=test_target)
+
+        # Populate preview on df change
+        data_train.change(fn=preview_data, inputs=data_train, outputs=train_preview)
+        data_test.change(fn=preview_data, inputs=data_test, outputs=test_preview)
+
+        with gr.Tab("Fit & Predict"):
+            # First model name
+            first_model_name: str = (
+                "TabPFN"
+                if "TabPFN" in get_models_based_on_task(first_task_type)
+                else get_models_based_on_task(first_task_type)[0]
+            )
+
+            # Select model
+            model_name = gr.Dropdown(
+                label="Select a model",
+                choices=get_models_based_on_task(first_task_type),
+                value=first_model_name,
+                interactive=True,
+            )
+
+            # Fit and Predict
+            run_btn = gr.Button("Fit & Predict")
+
+            # Result previews
+            preds_preview = gr.Dataframe(label="Predictions Preview", interactive=False)
+            preds_file = gr.File(label="Download predictions.csv")
+            info_box = gr.Textbox(
+                label="Info", lines=5, max_lines=20, interactive=False
+            )
+            scores_box = gr.Dataframe(
+                label="Evaluations (if test has target)", interactive=False
+            )
+        with gr.Tab("Model Comparisons"):
+            # Select model
+            leaderboard_model_names = gr.Dropdown(
+                label="Select models",
+                multiselect=True,
+                choices=get_models_based_on_task(first_task_type),
+                value=None,
+                interactive=True,
+            )
+
+            # Run models
+            leaderboard_btn = gr.Button("Run Leaderboard")
+
+            # Results previews
+            leaderboard_box = gr.Dataframe(label="Leaderboard", interactive=False)
+
+        # Update model lists
+        model_task.change(
+            fn=update_models_based_on_task, inputs=model_task, outputs=model_name
+        )
+        model_task.change(
+            fn=update_models_based_on_task,
+            inputs=model_task,
+            outputs=leaderboard_model_names,
+        )
+
+        # Fit and Predict run button
+        run_btn.click(
+            fn=run_training_and_predict,
+            inputs=[
+                model_name,
+                model_task,
+                data_train,
+                data_test,
+                train_target,
+                test_target,
+                target_empty,
+            ],
+            outputs=[preds_preview, preds_file, info_box, scores_box],
+        )
+
+        # Run leaderboard
+        leaderboard_btn.click(
+            fn=run_leaderboard,
+            inputs=[
+                leaderboard_model_names,
+                model_task,
+                data_train,
+                data_test,
+                train_target,
+                test_target,
+                target_empty,
+            ],
+            outputs=[leaderboard_box],
+        )
+
+        return demo
+
+
+def run_ui() -> None:
+    """Launches the Gradio app."""
+    demo: gr.Blocks = build_interface()
     demo.launch()
